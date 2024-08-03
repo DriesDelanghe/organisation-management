@@ -1,0 +1,62 @@
+name: kaleido-authentication
+
+services:
+  auth-database:
+    image: postgres:16.3-alpine
+    container_name: auth-database
+    restart: always
+    deploy:
+      mode: replicated
+      replicas: 1
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    secrets:
+      - keycloak_postgres_password
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-keycloak}
+      POSTGRES_USER: ${POSTGRES_USER:-keycloak}
+      POSTGRES_PASSWORD_FILE: /run/secrets/keycloak_postgres_password
+    networks:
+      - keycloak_network
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: keycloak
+    command: start
+    environment:
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_PORT: 8080
+      KC_HOSTNAME_STRICT_BACKCHANNEL: false
+      KC_HTTP_ENABLED: true
+      KC_HOSTNAME_STRICT_HTTPS: false
+      KC_HEALTH_ENABLED: true
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-keycloak}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-keycloak}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://auth-database:5432/${POSTGRES_DB:-keycloak}
+      KC_DB_USERNAME: ${POSTGRES_USER:-keycloak}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-keycloak}
+    ports:
+      - 8080:8080
+    restart: always
+    depends_on:
+      - auth-database
+    networks:
+      - keycloak_network
+      - gateway
+    # Set memory allocation to at least 20 MB
+    mem_limit: 250m
+
+volumes:
+  postgres_data:
+    name: authentication_postgres_data
+    driver: local
+
+networks:
+  keycloak_network:
+  gateway:
+    external: true
+
+secrets:
+  keycloak_postgres_password:
+    file: ./secrets/AUTH_POSTGRES_PASSWORD
