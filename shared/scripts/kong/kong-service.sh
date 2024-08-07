@@ -61,17 +61,15 @@ service_list() {
     
     local response
     local status_code
-    local url
+    local path
 
     if [[ "$workspace_name" != "" ]]; then
-        url=$(get_workspace_service_url "$workspace_name")
+        path=$(get_workspace_services_path "$workspace_name")
     else
-        url=$(get_services_url)
+        path=$(get_services_path)
     fi
 
-    response=$(curl --request GET \
-        --fail \
-        --url "$url")
+    response=$(do_kong_request -m GET -p "$path")
     status_code=$?
     
     if [[ $status_code -ne 0 ]]; then
@@ -134,20 +132,15 @@ service_add() {
     log_info "Creating service $name with url $backend_url"
     local response
     local status_code
-    local url
+    local path
 
     if [[ "$workspace_name" != "" ]]; then
-        url=$(get_workspace_service_url "$workspace_name")
+        path=$(get_workspace_services_path "$workspace_name")
     else
-        url=$(get_services_url)
+        path=$(get_services_path)
     fi
 
-    response=$(curl --request POST \
-        --fail \
-        --url "$url" \
-        --data "name=$name" \
-        --data "url=$backend_url" \
-        --data "tags[]=$(IFS=,; echo "${tags[*]}")")
+    response=$(do_kong_request -m POST -p "$path" -d "name=$name" -d "url=$backend_url" -d "tags[]=$(IFS=,; echo "${tags[*]}")")
     status_code=$?
 
     if [[ $status_code -ne 0 ]]; then
@@ -199,17 +192,15 @@ service_get() {
     log_info "Getting service $name"
     local response
     local status_code
-    local url
+    local path
 
     if [[ "$workspace_name" != "" ]]; then
-        url=$(get_workspace_service_url "$workspace_name" "$name")
+        path=$(get_workspace_services_path "$workspace_name" "$name")
     else
-        url=$(get_services_url "$name")
+        path=$(get_services_path "$name")
     fi
 
-    response=$(curl --request GET \
-        --fail \
-        --url "$url")
+    response=$(do_kong_request -m GET -p "$path")
     status_code=$?
 
     if [[ $status_code -ne 0 ]]; then
@@ -288,17 +279,15 @@ service_route_list() {
     log_info "Listing all routes"
     local response
     local status_code
-    local url
+    local path
 
     if [[ "$workspace_name" != "" ]]; then
-        url=$(get_workspace_service_route_url "$workspace_name" "$service_name")
+        path=$(get_workspace_services_route_path "$workspace_name" "$service_name")
     else
-        url=$(get_service_route_url "$service_name")
+        path=$(get_services_route_path "$service_name")
     fi
 
-    response=$(curl --request GET \
-        --fail \
-        --url "$url")
+    response=$(do_kong_request -m GET -p "$path")
     status_code=$?
 
     if [[ $status_code -ne 0 ]]; then
@@ -367,20 +356,15 @@ service_route_add() {
 
     local response
     local status_code
-    local url
+    local kong_path
 
     if [[ "$workspace_name" != "" ]]; then
-        url=$(get_workspace_service_route_url "$workspace_name" "$service_name")
+        kong_path=$(get_workspace_services_route_path "$workspace_name" "$service_name")
     else
-        url=$(get_service_route_url "$service_name")
+        kong_path=$(get_services_route_path "$service_name")
     fi
 
-    response=$(curl --request POST \
-        --fail \
-        --url "$url" \
-        --data "paths[]=$path" \
-        --data "name=$path_name" \
-        --data "tags[]=$(IFS=,; echo "${tags[*]}")")
+    response=$(do_kong_request -m POST -p "$kong_path" -d "paths[]=$path" -d "name=$path_name" -d "tags[]=$(IFS=,; echo "${tags[*]}")")
     status_code=$?
 
     if [[ status_code -ne 0 ]]; then
@@ -437,17 +421,15 @@ service_route_get() {
     log_info "Getting route $path_name for service $service_name"
     local response
     local status_code
-    local url
+    local path
 
     if [[ "$workspace_name" != "" ]]; then
-        url=$(get_workspace_service_route_url "$workspace_name" "$service_name" "$path_name")
+        path=$(get_workspace_services_route_path "$workspace_name" "$service_name" "$path_name")
     else
-        url=$(get_service_route_url "$service_name" "$path_name")
+        path=$(get_services_route_path "$service_name" "$path_name")
     fi
 
-    response=$(curl --request GET \
-        --fail \
-        --url "$url")
+    response=$(do_kong_request -m GET -p "$path")
     status_code=$?
 
     if [[ $status_code -ne 0 ]]; then

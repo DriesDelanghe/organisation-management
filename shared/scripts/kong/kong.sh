@@ -7,6 +7,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")" || {
     log_error "Failed to change the directory to $(dirname "$0")"
     exit 1
 }
+source ../keycloak/shared.sh
 source ./kong-config.sh
 source ./kong-consumer.sh
 source ./kong-plugin.sh

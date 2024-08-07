@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# This method will handle the plugin related operations
 plugin() {
     if [[ "$1" == "" ]]; then
         plugin_usage
@@ -22,11 +21,14 @@ plugin() {
         shift
             result=$(plugin_list "$@")
             ;;
+        -h | --help )
+            plugin_usage
+            exit 0
+            ;;
         * )
             plugin_usage
             exit 1
     esac
-    shift
 
     echo "$result"
 }
@@ -51,17 +53,15 @@ plugin_list() {
     log_info "Listing all plugins"
     local response
     local status_code
-    local url
+    local path
 
     if [[ "$workspace_name" != "" ]]; then
-        url=$(get_workspace_plugin_url "$workspace_name")
+        path=$(get_workspace_plugin_path "$workspace_name")
     else
-        url=$(get_plugin_url)
+        path=$(get_plugin_path)
     fi
 
-    response=$(curl -s --request GET \
-        --url "$url" \
-        --header "Content-Type: application/json")
+    response=$(do_kong_request -m GET -p "$path")
     status_code=$?
 
     if [[ $status_code -ne 0 ]]; then
@@ -140,39 +140,34 @@ plugin_add() {
 
     local response
     local status_code
-    local url
+    local path
 
     if [[ "$service_name" == "" && "$route_name" == "" ]]; then
         if [[ "$workspace_name" != "" ]]; then
-            url=$(get_workspace_plugin_url "$workspace_name")
+            path=$(get_workspace_plugin_path "$workspace_name")
         else
-            url=$(get_plugin_url)
+            path=$(get_plugin_path)
         fi
     elif [[ "$route_name" == "" ]]; then
         if [[ "$workspace_name" != "" ]]; then
-            url=$(get_workspace_service_plugin_url "$workspace_name" "$service_name")
+            path=$(get_workspace_service_plugin_path "$workspace_name" "$service_name")
         else
-            url=$(get_services_plugin_url "$service_name")
+            path=$(get_services_plugin_path "$service_name")
         fi
     else
         if [[ "$workspace_name" != "" ]]; then
-            url=$(get_workspace_service_route_plugin_url "$workspace_name" "$service_name" "$route_name")
+            path=$(get_workspace_service_route_plugin_path "$workspace_name" "$service_name" "$route_name")
         else
-            url=$(get_service_route_plugin_url "$service_name" "$route_name")
+            path=$(get_service_route_plugin_path "$service_name" "$route_name")
         fi
     fi
 
     arguments=()
-    for i in "${!data[@]}"; do
-        arguments+=("--data")
-        arguments+=("${data[$i]}")
+    for data in "${data[@]}"; do
+        arguments+=("--data $data")
     done
 
-    response=$(curl -s --request POST \
-        --url "$url" \
-        --data "name=$plugin_name" \
-        --data "tags=$(IFS=,; echo "${tags[*]}")" \
-        "${arguments[@]}")
+    response=$(do_kong_request -m POST -p "$path" -d "name=$plugin_name" -d "tags=$(IFS=,; echo "${tags[*]}")" ${arguments[*]})
     status_code=$?
 
     if [[ $status_code -ne 0 ]]; then
@@ -240,30 +235,29 @@ plugin_get() {
 
     local response
     local status_code
-    local url
+    local path
 
     if [[ "$service_name" == "" && "$route_name" == "" ]]; then
         if [[ "$workspace_name" != "" ]]; then
-            url=$(get_workspace_plugin_url "$workspace_name")
+            path=$(get_workspace_plugin_path "$workspace_name")
         else
-            url=$(get_plugin_url)
+            path=$(get_plugin_path)
         fi
     elif [[ "$route_name" == "" ]]; then
         if [[ "$workspace_name" != "" ]]; then
-            url=$(get_workspace_service_plugin_url "$workspace_name" "$service_name")
+            path=$(get_workspace_service_plugin_path "$workspace_name" "$service_name")
         else
-            url=$(get_services_plugin_url "$service_name")
+            path=$(get_services_plugin_path "$service_name")
         fi
     else
         if [[ "$workspace_name" != "" ]]; then
-            url=$(get_workspace_service_route_plugin_url "$workspace_name" "$service_name" "$route_name")
+            path=$(get_workspace_service_route_plugin_path "$workspace_name" "$service_name" "$route_name")
         else
-            url=$(get_service_route_plugin_url "$service_name" "$route_name")
+            path=$(get_service_route_plugin_path "$service_name" "$route_name")
         fi
     fi
 
-    response=$(curl -s --request GET \
-        --fail --url "$url" jq -r '.data[] | select(.name == "'"$plugin_name"'")')
+    response=$(do_kong_request -m GET -p "$path" | jq -r '.data[] | select(.name == "'"$plugin_name"'")')
     status_code=$?
 
     if [[ $status_code -ne 0 ]]; then

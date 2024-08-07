@@ -1,7 +1,11 @@
 #!/bin/bash
 
-# This method will handle the consumer related operations
 consumer() {
+
+    if [[ "$1" == "" ]]; then
+        consumer_usage
+        exit 1
+    fi
 
     local result
 
@@ -22,9 +26,9 @@ consumer() {
             shift
             result=$(consumer_group "$@")
             ;;
-        acls )
+        acl )
             shift
-            result=$(consumer_acls "$@")
+            result=$(consumer_acl "$@")
             ;;
         -l | --list )
             result=$(consumer_list "$@")
@@ -62,17 +66,16 @@ consumer_list() {
     log_info "Listing all consumers"
     local response
     local status_code
-    local url
+    local path
 
     if [[ "$workspace_name" == "" ]]; then
-        url=$(get_consumers_url)
+        path=$(get_consumer_path)
     else
-        url=$(get_workspace_consumer_url "$workspace_name")
+        path=$(get_workspace_consumer_path "$workspace_name")
     fi
 
-    response=$(curl -s --request GET \
-        --url "$url" \
-        --header "Content-Type: application/json")
+    response=$(do_kong_request -m GET -p "$path")
+    status_code=$?
 
     if [[ $status_code -ne 0 ]]; then
         log_error "Failed to list consumers"
@@ -138,22 +141,17 @@ consumer_create() {
 
     log_info "Creating consumer $consumer_username"
 
-    local url
+    local path
     local response
     local status_code
 
     if [[ "$workspace_name" == "" ]]; then
-        url=$(get_consumers_url)
+        path=$(get_consumer_path)
     else
-        url=$(get_workspace_consumer_url "$workspace_name")
+        path=$(get_workspace_consumer_path "$workspace_name")
     fi
 
-    response=$(curl -s --request POST \
-        --url "$url" \
-        --fail \
-        --data "username=$consumer_username" \
-        --data "custom_id=$consumer_id" \
-        --data "tags[]=$(IFS=,; echo "${tags[*]}")")
+    response=$(do_kong_request -m POST -p "$path" -d "username=$consumer_username" -d "custom_id=$consumer_id" -d "tags[]=$(IFS=,; echo "${tags[*]}")")
     status_code=$?
 
     if [[ $status_code != 0 ]]; then
@@ -215,31 +213,33 @@ consumer_get() {
     fi
 
     log_info "Getting consumer $consumer_id"
-    local url
+    local path
     local response
     local status_code
 
     if [[ "$workspace_name" == "" ]]; then
-        url=$(get_consumers_url "$consumer_id")
+        path=$(get_consumer_path "$consumer_id")
     else
-        url=$(get_workspace_consumer_url "$workspace_name" "$consumer_id")
+        path=$(get_workspace_consumer_path "$workspace_name" "$consumer_id")
+    fi
+
+    response=$(do_kong_request -m GET -p "$path")
+    status_code=$?
+
+    if [[ $status_code != 0 ]]; then
+        if [[ $consumer_id == "" ]]; then
+            log_error "Failed to get consumer $consumer_username"
+        else
+            log_error "Failed to get consumer $consumer_id"
+        fi
+        exit 1
     fi
 
     if [[ "$consumer_id" == "" ]]; then
-        response=$(curl -s --request GET \
-            --url "$url")
-        status_code=$?
         response=$(echo "$response" | jq -r '.data[] | select(.username == "'"$consumer_username"'")')
-    else
-        response=$(curl -s --request GET \
-            --url "$url")
-        status_code=$?
     fi
 
-    if [[ $status_code != 0 ]]; then
-        log_error "Failed to get consumer $consumer_id"
-        exit 1
-    fi
+
 
     log_success "Consumer $consumer_id retrieved successfully"
 
@@ -323,18 +323,17 @@ consumer_key_get() {
     fi
 
     log_info "Getting consumer key $consumer_id"
-    local url
+    local path
     local response
     local status_code
 
     if [[ "$workspace_name" == "" ]]; then
-        url=$(get_consumers_key_url "$consumer_id")
+        path=$(get_consumer_key_path "$consumer_id")
     else
-        url=$(get_workspace_consumer_key_url "$workspace_name" "$consumer_id")
+        path=$(get_workspace_consumer_key_path "$workspace_name" "$consumer_id")
     fi
 
-    response=$(curl -s --request GET \
-        --url "$url")
+    response=$(do_kong_request -m GET -p "$path")
     status_code=$?
 
     if [[ $(echo "$response" | jq -r '.key') == "" || $status_code != 0 ]]; then
@@ -406,20 +405,17 @@ consumer_key_create() {
     fi
 
     log_info "Creating consumer key $consumer_id"
-    local url
+    local path
     local response
     local status_code
 
     if [[ "$workspace_name" == "" ]]; then
-        url=$(get_consumers_key_url "$consumer_id")
+        path=$(get_consumer_key_path "$consumer_id")
     else
-        url=$(get_workspace_consumers_key_url "$workspace_name" "$consumer_id")
+        path=$(get_workspace_consumer_key_path "$workspace_name" "$consumer_id")
     fi
 
-    response=$(curl -s --request POST \
-        --fail \
-        --url "$url" \
-        --data "tags[]=$(IFS=,; echo "${tags[*]}")")
+    response=$(do_kong_request -m POST -p "$path" -d "tags[]=$(IFS=,; echo "${tags[*]}")")
     status_code=$?
 
     if [[ $status_code != 0 ]]; then
@@ -507,21 +503,17 @@ consumer_group_create() {
 
     log_info "Creating consumer group $group_name"
 
-    local url
+    local path
     local response
     local status_code
 
     if [[ "$workspace_name" == "" ]]; then
-        url=$(get_consumers_group_url)
+        path=$(get_consumers_group_path)
     else
-        url=$(get_workspace_consumers_group_url "$workspace_name")
+        path=$(get_workspace_consumers_group_path "$workspace_name")
     fi
 
-    response=$(curl -s --request POST \
-        --url "$url" \
-        --fail \
-        --data "name=$group_name" )
-        # --data "tags[]=$(IFS=,; echo "${tags[*]}")")
+    response=$(do_kong_request -m POST -p "$path" -d "name=$group_name" -d "tags[]=$(IFS=,; echo "${tags[*]}")")
     status_code=$?
 
     if [[ $status_code != 0 ]]; then
@@ -584,30 +576,30 @@ consumer_group_get() {
     fi
 
     log_info "Getting consumer group $group_id"
-    local url
+    local path
     local response
     local status_code
 
     if [[ "$workspace_name" == "" ]]; then
-        url=$(get_consumers_group_url "$group_id")
+        path=$(get_consumers_group_path "$group_id")
     else
-        url=$(get_workspace_consumers_group_url "$workspace_name" "$group_id")
+        path=$(get_workspace_consumers_group_path "$workspace_name" "$group_id")
+    fi
+
+    response=$(do_kong_request -m GET -p "$path")
+    status_code=$?
+
+    if [[ $status_code != 0 ]]; then
+        if [[ "$group_id" == "" ]]; then
+            log_error "Failed to get consumer group $group_name"
+        else
+            log_error "Failed to get consumer group $group_id"
+        fi
+        exit 1
     fi
 
     if [[ "$group_id" == "" ]]; then
-        response=$(curl -s --request GET \
-            --url "$url")
-        status_code=$?
         response=$(echo "$response" | jq -r '.data[] | select(.group == "'"$group_name"'")')
-    else
-        response=$(curl -s --request GET \
-            --url "$url")
-        status_code=$?
-    fi
-
-    if [[ $status_code != 0 ]]; then
-        log_error "Failed to get consumer group $group_id"
-        exit 1
     fi
 
     log_success "Consumer group $group_id retrieved successfully"
@@ -637,17 +629,16 @@ consumer_group_list() {
     log_info "Listing all consumer groups"
     local response
     local status_code
-    local url
+    local path
 
     if [[ "$workspace_name" == "" ]]; then
-        url=$(get_consumers_group_url)
+        path=$(get_consumers_group_path)
     else
-        url=$(get_workspace_consumers_group_url "$workspace_name")
+        path=$(get_workspace_consumers_group_path "$workspace_name")
     fi
 
-    response=$(curl -s --request GET \
-        --url "$url" \
-        --header "Content-Type: application/json")
+    response=$(do_kong_request -m GET -p "$path")
+    status_code=$?
 
     if [[ $status_code -ne 0 ]]; then
         log_error "Failed to list consumer groups"
@@ -715,20 +706,17 @@ consumer_group_add() {
 
     log_info "Adding consumer $consumer_id to group $group_name"
 
-    local url
+    local path
     local response
     local status_code
 
     if [[ "$workspace_name" == "" ]]; then
-        url=$(get_consumers_group_url "$group_name")
+        path=$(get_consumers_group_path "$group_name")
     else
-        url=$(get_workspace_consumers_group_url "$workspace_name" "$group_name")
+        path=$(get_workspace_consumers_group_path "$workspace_name" "$group_name")
     fi
 
-    response=$(curl -s --request PATCH \
-        --url "$url" \
-        --fail \
-        --data "consumer=$consumer_id")
+    response=$(do_kong_request -m PATCH -p "$path" -d "consumer=$consumer_id")
     status_code=$?
 
     if [[ $status_code != 0 ]]; then
@@ -744,7 +732,7 @@ consumer_group_add() {
     echo "$response"
 }
 
-consumer_acls() {
+consumer_acl() {
     
     local workspace_name
     local consumer_username
@@ -771,7 +759,7 @@ consumer_acls() {
                 tags+=("$1")
                 ;;
             * )
-                consumer_group_add_usage
+                consumer_acl_add_usage
                 exit 1
         esac
         shift
@@ -780,32 +768,28 @@ consumer_acls() {
     if [[ "$group_name" == "" ]]; then
         log_error "Group name is required"
         log_info ""
-        consumer_group_add_usage
+        consumer_acl_add_usage
         exit 1
     fi
 
     if [[ "$consumer_username" == "" ]]; then
         log_error "Consumer name is required"
         log_info ""
-        consumer_group_add_usage
+        consumer_acl_add_usage
         exit 1
     fi
 
-    local url
+    local path
     local response
     local status_code
 
     if [[ "$workspace_name" == "" ]]; then
-        url=$(get_consumers_acls_url "$consumer_username")
+        path=$(get_consumers_acl_path "$consumer_username")
     else
-        url=$(get_workspace_consumer_acls_url "$workspace_name" "$consumer_username")
+        path=$(get_workspace_consumer_acl_path "$workspace_name" "$consumer_username")
     fi
 
-    response=$(curl -s --request POST \
-        --url "$url" \
-        --fail \
-        --data "group=$group_name" \
-        --data "tags[]=$(IFS=,; echo "${tags[*]}")")
+    response=$(do_kong_request -m POST -p "$path" -d "group=$group_name" -d "tags[]=$(IFS=,; echo "${tags[*]}")")
     status_code=$?
 
     if [[ $status_code != 0 ]]; then
@@ -935,5 +919,15 @@ consumer_group_add_usage() {
     log_info "Options:"
     log_info "  -g, --group <group>             Group name"
     log_info "  -c, --consumer <consumer>       Consumer name"
+    log_info "  -w, --workspace <workspace>     Workspace name"
+}
+
+consumer_acl_add_usage() {
+    log_info "Usage: kong consumer acl [options]"
+    log_info ""
+    log_info "Options:"
+    log_info "  -g, --group <group>             Group name"
+    log_info "  -c, --consumer <consumer>       Consumer name"
+    log_info "  -t, --tags <tags>               Tags"
     log_info "  -w, --workspace <workspace>     Workspace name"
 }

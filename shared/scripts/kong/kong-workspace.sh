@@ -30,10 +30,24 @@ workspace() {
 }
 
 workspace_list() {
-    log_info "Listing all workspaces"
-    response=$(curl -s --request GET \
-        --url "$(get_workspace_url)" \
-        --header "Content-Type: application/json" | jq -r '.')
+    log_info "Retrieving all workspaces"
+
+    local response
+    local status_code
+
+    response=$(do_kong_request -m GET -p "$(get_workspace_path)")
+    status_code=$?
+
+    if [[ $status_code -ne 0 ]]; then
+        log_error "Failed to list workspaces"
+        return 1
+    fi
+
+    response=$(echo "$response" | jq -r '.data')
+    log_debug "$response"
+
+    log_success "Retrieved all workspaces successfully"
+
     echo "$response"
 }
 
@@ -66,16 +80,20 @@ workspace_add() {
     fi
 
     log_info "Adding workspace $workspace_name"
-    response=$(curl -s --request POST \
-        --fail \
-        --url "$(get_workspace_url)" \
-        --data "name=$workspace_name" | jq -r '.')
+
+    local response
+    local status_code
+
+    response=$(do_kong_request -m POST -p "$(get_workspace_path)" -d "name=$workspace_name")
     result_code=$?
-    log_debug "$response"
-    if [[ $(echo "$response" | jq -r '.id') == "" || result_code -ne 0 ]]; then
+
+    if [[ $status_code != 0 ]]; then
         log_error "Failed to create workspace $workspace_name"
         return 1
     fi
+
+    response=$(echo "$response" | jq -r '.')
+    log_debug "$response"
 
     log_success "Workspace $workspace_name created successfully"
     echo "$response"
@@ -111,16 +129,20 @@ workspace_get() {
 
     log_info "Getting workspace $workspace_name"
     # should fetch all workspaces and filter by name
-    response=$(curl -s --request GET \
-        --url "$(get_workspace_url)" \
-        --header "Content-Type: application/json" | jq -r '.data[] | select(.name == "'"$workspace_name"'")')
-    result_code=$?
 
-    log_debug "$response"
-    if [[ $(echo "$response" | jq -r '.id') == "null" || result_code -ne 0 ]]; then
+    local response
+    local status_code
+
+    response=$(do_kong_request -m GET -p "$(get_workspace_path)")
+    status_code=$?
+
+    if [[ $status_code != 0 ]]; then
         log_error "Failed to get workspace $workspace_name"
         return 1
     fi
+
+    response=$(echo "$response" | jq -r '.data[] | select(.name == "'"$workspace_name"'")')
+    log_debug "$response"
 
     log_success "Workspace $workspace_name retrieved successfully"
 

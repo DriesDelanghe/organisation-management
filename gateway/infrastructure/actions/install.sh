@@ -8,6 +8,9 @@ gateway_postgresql_secret_file="../docker/secrets/GATEWAY_POSTGRES_PASSWORD"
 authentication_compose_file="../docker/keycloak.compose.yaml"
 authentication_postgresql_secret_file="../docker/secrets/AUTH_POSTGRES_PASSWORD"
 
+kong_scripts_output_dir="../../../shared/scripts/kong/output"
+kong_api_config_file="$kong_scripts_output_dir/kong-config.json"
+
 authentication_dump_file="./output/authentication-dump-$(date +%Y-%m-%d-%H-%M-%S).sql"
 
 
@@ -22,7 +25,6 @@ main() {
     deploy_gateway_compose
     wait_for_kong_response
     initialize_kong_variables
-    resolve_kong_configuration
     set_kong_ratelimit
     set_default_proxy_cache
     setup_admin_api
@@ -121,6 +123,15 @@ check_for_gateway_instance() {
         log_info "deleting volumes..."
         docker volume rm gateway_postgres_data
         log_success "Kaleido-gateway stopped and volumes removed."
+
+        log_info "Checking for kong config file..."
+        if [[ -f "$kong_api_config_file" ]]; then
+            log_info "Kong config file found, removing outdated kong config file..."
+            rm "$kong_api_config_file"
+            log_success "kong config file removed."
+        else 
+            log_info "no kong config file found."
+        fi
     else
         log_info "no instance of kaleido-gateway found."
     fi
@@ -145,59 +156,35 @@ initialize_kong_variables() {
 
     # Output files
     kong_output_dir="./output"
-    kong_output_config_file="$kong_output_dir/configuration-default.json"
-    kong_output_ratelimit_config_file="$kong_output_dir/admin-api-rate-limit-global.json"
-    kong_output_cache_config_file="$kong_output_dir/admin-api-proxy-cache-global.json"
-    kong_output_admin_api_service_file="$kong_output_dir/admin-api-service.json"
-    kong_output_admin_api_route_file="$kong_output_dir/admin-api-route.json"
-    kong_output_admin_api_key_file="$kong_output_dir/admin-api-key.json"
-    kong_output_admin_api_consumer_file="$kong_output_dir/admin-api-consumer.json"
-    kong_output_admin_api_consumer_key_file="$kong_output_dir/admin-api-consumer-key.json"
-    kong_output_oidc_config_file="$kong_output_dir/oidc-plugin.json"
-    kong_output_acl_config_file="$kong_output_dir/admin-api-acl.json"
+    mkdir -p "$kong_output_dir"
 
     # variables
     kong_max_requests_per_minute=60
     kong_cache_ttl=30
 }
 
-resolve_kong_configuration () {
-    log_info "Resolving Kong configuration..."
-
-    mkdir -p "$kong_output_dir"
-    touch "$kong_output_config_file"
-
-    kong config get > "$kong_output_config_file"
-    log_success "Kong configuration resolved and saved at $kong_output_config_file"
-}
-
 set_kong_ratelimit() {
     log_info "Setting Kong rate limit..."
     
-    kong plugin add -n rate-limiting \
+    kong_rate_limiting_plugin_config=$(kong plugin add -n rate-limiting \
         --data "config.minute=$kong_max_requests_per_minute" \
-        --data "config.policy=local" \
-        > "$kong_output_ratelimit_config_file"
+        --data "config.policy=local")
+    # $kong_rate_limiting_plugin_config > "$kong_output_ratelimit_config_file"
 
     log_success "Kong rate limit set to $kong_max_requests_per_minute request per minute."
 }
 
 set_default_proxy_cache() {
     log_info "Setting default proxy cache..."
-    kong plugin add -n proxy-cache  \
+    kong_cache_plugin_config=$(kong plugin add -n proxy-cache  \
         --data "config.request_method=GET" \
         --data "config.response_code=200" \
-        --data "config.content_type=application/json; charset=utf-8" \
+        --data "config.content_type=application/json;charset=utf-8" \
         --data "config.cache_ttl=$kong_cache_ttl" \
-        --data "config.strategy=memory" \
-        > "$kong_output_cache_config_file"
+        --data "config.strategy=memory")
+    # $kong_cache_plugin_config > "$kong_output_cache_config_file"
 
     log_success "Default proxy cache set wiith a ttl of $kong_cache_ttl."
-}
-
-set_kong_oidc_plugin() {
-    log_info "Setting Kong OIDC plugin..."
-    kong plugin add -n kong-oidc > "$kong_output_oidc_config_file"
 }
 
 setup_admin_api() {
@@ -213,36 +200,59 @@ setup_admin_api() {
     
     
     log_info "Setting up admin API..."
-    kong service add -n "$admin_api_service_name" -u "$admin_api_backend_url" -t "$kong_admin_api_tag"  > "$kong_output_admin_api_service_file"
+    kong_admin_api_service_config=$(kong service add -n "$admin_api_service_name" -u "$admin_api_backend_url" -t "$kong_admin_api_tag")  
+    # $kong_admin_api_service_config > "$kong_output_admin_api_service_file"
     log_success "Admin API service set up."
 
     log_info "Setting up admin API route..."
-    kong service route add -s "$admin_api_service_name" -p "$admin_api_service_path" -n $admin_api_service_path_name -t "$kong_admin_api_tag" > "$kong_output_admin_api_route_file"
+    admin_api_route_config=$(kong service route add -s "$admin_api_service_name" -p "$admin_api_service_path" -n $admin_api_service_path_name -t "$kong_admin_api_tag" )
+    # $admin_api_route_config > "$kong_output_admin_api_route_file"
     log_success "Admin API route set up."
 
     log_info "Enabling key authentication for admin API..."
-    kong plugin add -s "$admin_api_service_name" -n key-auth --data config.key_names[]="$kong_api_key_header_name" -t "$kong_admin_api_tag" > "$kong_output_admin_api_key_file"
+    kong_key_auth_config=$(kong plugin add -s "$admin_api_service_name" -n key-auth --data config.key_names[]="$kong_api_key_header_name" -t "$kong_admin_api_tag") 
+    # $kong_key_auth_config > "$kong_output_admin_api_key_file"
     log_success "Key authentication enabled for admin API."
     
     log_info "Creating Admin API consumer..."
-    consumer=$(kong consumer create -n $kong_admin_api_consumer_name -i $kong_admin_api_consumer_custom_id -t "$kong_admin_api_tag") 
-    echo "$consumer" > "$kong_output_admin_api_consumer_file"
-    log_debug "consumer=$consumer"
+    kong consumer create -n $kong_admin_api_consumer_name -i $kong_admin_api_consumer_custom_id -t "$kong_admin_api_tag"
+    # echo "$consumer" > "$kong_output_admin_api_consumer_file"
+    # log_debug "consumer=$consumer"
     log_success "Admin API consumer created."
 
     log_info "Creating API key for Admin API consumer..."
-    kong consumer key create -i $kong_admin_api_consumer_custom_id -t "$kong_admin_api_tag" > "$kong_output_admin_api_consumer_key_file"
+    api_key_config=$(kong consumer key create -i $kong_admin_api_consumer_custom_id -t "$kong_admin_api_tag" )
+    # $api_key_config > "$kong_output_admin_api_consumer_key_file"
     log_success "API key created for Admin API consumer."
 
     log_info "Restricting access to admin API..."
-    kong plugin add -s "$admin_api_service_name" -n acl \
+    kong_acl_config=$(kong plugin add -s "$admin_api_service_name" -n acl \
     --data config.allow[]="$kong_admin_api_consumer_group_name" \
     --data config.hide_groups_header=true \
-    -t "$kong_admin_api_tag" > $kong_output_acl_config_file
+    -t "$kong_admin_api_tag") 
+    # $kong_acl_config > $kong_output_acl_config_file
 
     log_info "Adding consumer to admin group..."
-    kong consumer acls -g "$kong_admin_api_consumer_group_name" -c "$kong_admin_api_consumer_custom_id" -t "$kong_admin_api_tag"
+    kong consumer acl -g "$kong_admin_api_consumer_group_name" -c "$kong_admin_api_consumer_custom_id" -t "$kong_admin_api_tag"
     log_success "Consumer added to admin group."
+
+    log_info "Saving admin API access for further use..."
+
+    kong_url="http://localhost:8000$(echo $admin_api_route_config | jq -r '.paths[0]')"
+
+    # Create new json object using jq
+    admin_api_config=$(jq -n \
+        --arg api_key "$(echo "$api_key_config" | jq -r '.key')" \
+        --arg url "$kong_url" \
+        --arg credentialtype "api-key" \
+        --arg headername "$(echo "$kong_key_auth_config" | jq -r '.config.key_names[0]')" \
+        '{url: $url, credentials: [{type: $credentialtype, key: $api_key, header: $headername} ]}')
+
+    log_debug "admin_api_config=$admin_api_config"
+
+    mkdir -p $kong_scripts_output_dir
+    echo "$admin_api_config" > $kong_api_config_file
+    log_success "Admin API access saved at $kong_api_config_file"
 
     log_success "Admin API successfully set up."
     log_info "Kong Admin API is now available at http://localhost:8000/admin-api"

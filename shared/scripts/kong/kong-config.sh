@@ -22,8 +22,7 @@ config() {
 
 config_get() {
     local response
-    response=$(curl -s --request GET \
-        --url "$(get_kong_url)" | jq -r '.configuration')
+    response=$(do_kong_request -m GET -p "$(get_kong_path)" | jq -r '.configuration')
 
     echo "$response"
 
