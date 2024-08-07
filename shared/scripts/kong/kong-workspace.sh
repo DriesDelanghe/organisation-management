@@ -85,7 +85,7 @@ workspace_add() {
     local status_code
 
     response=$(do_kong_request -m POST -p "$(get_workspace_path)" -d "name=$workspace_name")
-    result_code=$?
+    status_code=$?
 
     if [[ $status_code != 0 ]]; then
         log_error "Failed to create workspace $workspace_name"
