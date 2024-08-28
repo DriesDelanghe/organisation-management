@@ -30,7 +30,6 @@ main() {
     initialize_kong_variables
     set_kong_ratelimit
     set_default_proxy_cache
-    setup_admin_api
 
     check_for_authentication_instance
     generate_authentication_secrets
@@ -195,77 +194,6 @@ set_default_proxy_cache() {
     # $kong_cache_plugin_config > "$kong_output_cache_config_file"
 
     log_success "Default proxy cache set wiith a ttl of $kong_cache_ttl."
-}
-
-setup_admin_api() {
-    local admin_api_service_name="admin-api-service"
-    local admin_api_service_path="/admin-api"
-    local admin_api_service_path_name="admin-api-route"
-    local admin_api_backend_url="http://localhost:8001"
-    local kong_admin_api_consumer_name="administrator"
-    local kong_admin_api_consumer_group_name="admin_group"
-    local kong_admin_api_consumer_custom_id="administrator"
-    local kong_api_key_header_name="kal-api-key"
-    local kong_admin_api_tag="admin"
-    
-    
-    log_info "Setting up admin API..."
-    kong_admin_api_service_config=$(kong service add -n "$admin_api_service_name" -u "$admin_api_backend_url" -t "$kong_admin_api_tag")  
-    # $kong_admin_api_service_config > "$kong_output_admin_api_service_file"
-    log_success "Admin API service set up."
-
-    log_info "Setting up admin API route..."
-    admin_api_route_config=$(kong service route add -s "$admin_api_service_name" -p "$admin_api_service_path" -n $admin_api_service_path_name -t "$kong_admin_api_tag" )
-    # $admin_api_route_config > "$kong_output_admin_api_route_file"
-    log_success "Admin API route set up."
-
-    log_info "Enabling key authentication for admin API..."
-    kong_key_auth_config=$(kong plugin add -s "$admin_api_service_name" -n key-auth --data config.key_names[]="$kong_api_key_header_name" -t "$kong_admin_api_tag") 
-    # $kong_key_auth_config > "$kong_output_admin_api_key_file"
-    log_success "Key authentication enabled for admin API."
-    
-    log_info "Creating Admin API consumer..."
-    kong consumer create -n $kong_admin_api_consumer_name -i $kong_admin_api_consumer_custom_id -t "$kong_admin_api_tag"
-    # echo "$consumer" > "$kong_output_admin_api_consumer_file"
-    # log_debug "consumer=$consumer"
-    log_success "Admin API consumer created."
-
-    log_info "Creating API key for Admin API consumer..."
-    api_key_config=$(kong consumer key create -i $kong_admin_api_consumer_custom_id -t "$kong_admin_api_tag" )
-    # $api_key_config > "$kong_output_admin_api_consumer_key_file"
-    log_success "API key created for Admin API consumer."
-
-    log_info "Restricting access to admin API..."
-    kong_acl_config=$(kong plugin add -s "$admin_api_service_name" -n acl \
-    --data config.allow[]="$kong_admin_api_consumer_group_name" \
-    --data config.hide_groups_header=true \
-    -t "$kong_admin_api_tag") 
-    # $kong_acl_config > $kong_output_acl_config_file
-
-    log_info "Adding consumer to admin group..."
-    kong consumer acl -g "$kong_admin_api_consumer_group_name" -c "$kong_admin_api_consumer_custom_id" -t "$kong_admin_api_tag"
-    log_success "Consumer added to admin group."
-
-    log_info "Saving admin API access for further use..."
-
-    kong_url="http://localhost:8000$(echo $admin_api_route_config | jq -r '.paths[0]')"
-
-    # Create new json object using jq
-    admin_api_config=$(jq -n \
-        --arg api_key "$(echo "$api_key_config" | jq -r '.key')" \
-        --arg url "$kong_url" \
-        --arg credentialtype "api-key" \
-        --arg headername "$(echo "$kong_key_auth_config" | jq -r '.config.key_names[0]')" \
-        '{url: $url, credentials: [{type: $credentialtype, key: $api_key, header: $headername} ]}')
-
-    log_debug "admin_api_config=$admin_api_config"
-
-    mkdir -p $kong_scripts_output_dir
-    echo "$admin_api_config" > $kong_api_config_file
-    log_success "Admin API access saved at $kong_api_config_file"
-
-    log_success "Admin API successfully set up."
-    log_info "Kong Admin API is now available at http://localhost:8000/admin-api"
 }
 
 check_for_authentication_instance() {
