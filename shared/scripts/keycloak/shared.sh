@@ -48,38 +48,18 @@ get_token() {
         realm="master"
     fi
 
-    work_dir=$(pwd)
-    cd "$(dirname "${BASH_SOURCE[0]}")" || {
-        echo "Failed to change the directory to $(dirname "$0")"
-        exit 1
-    }
     local url
     local username
     local password
-    if [[ -f "./keycloak-config,json" ]]; then
-        local config
-        config=$(cat ./keycloak-config.json)
-        url=$(echo "$config" | jq -r '.url')
-        if [[ "$username" == "" ]]; then
-            username=$(echo "$config" | jq -r '.credentials.username')
-        fi
-        if [[ "$password" == "" ]]; then
-            password=$(echo "$config" | jq -r '.credentials.password')
-        fi
-    else
-        url=$keycloak_admin_url
-        if [[ "$username" == "" ]]; then
-            username="keycloak"
-        fi
-        if [[ "$password" == "" ]]; then
-            password="keycloak"
-        fi
-    fi
 
-    cd "$work_dir" || {
-        echo "Failed to change the directory to $work_dir"
-        exit 1
-    }
+
+    url=$keycloak_admin_url
+    if [[ "$username" == "" ]]; then
+        username="keycloak"
+    fi
+    if [[ "$password" == "" ]]; then
+        password="keycloak"
+    fi
 
     local response
     response=$(curl -s --request POST \
@@ -88,7 +68,10 @@ get_token() {
         --data-urlencode "client_id=admin-cli" \
         --data-urlencode "username=$username" \
         --data-urlencode "password=$password" \
-        --data-urlencode "grant_type=password" | jq -r '.access_token')
+        --data-urlencode "grant_type=password")
 
-    echo "$response"
+    response=$(echo "$response" | jq -r '.')
+    log_debug "$response"
+
+    echo "$(echo "$response" | jq -r '.access_token')"
 }

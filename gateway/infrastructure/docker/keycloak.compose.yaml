@@ -44,8 +44,6 @@ services:
     networks:
       - keycloak_network
       - gateway
-    # Set memory allocation to at least 20 MB
-    mem_limit: 250m
 
 volumes:
   postgres_data:

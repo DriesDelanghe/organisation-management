@@ -11,6 +11,9 @@ authentication_postgresql_secret_file="../docker/secrets/AUTH_POSTGRES_PASSWORD"
 kong_scripts_output_dir="../../../shared/scripts/kong/output"
 kong_api_config_file="$kong_scripts_output_dir/kong-config.json"
 
+keycloak_output_dir="../../../shared/scripts/keycloak/output"
+keycloak_config_file="$keycloak_output_dir/keycloak-config.json"
+
 authentication_dump_file="./output/authentication-dump-$(date +%Y-%m-%d-%H-%M-%S).sql"
 
 
@@ -35,6 +38,9 @@ main() {
     deploy_authentication_compose
     wait_for_auth_response
     restore_authentication_data
+
+    access_token=$(get_token --realm "master" --username "keycloak" --password "$authentication_admin_password")
+    log_info "Access token: $access_token"
 }
 
 resolve_parameters() {
@@ -81,6 +87,10 @@ setup() {
     log_debug "Loading kong helper methods"
     source "../../../shared/scripts/kong/kong.sh"
     log_debug "Kong helper methods loaded"
+
+    log_debug "Loading keycloak helper methods"
+    source "../../../shared/scripts/keycloak/keycloak.sh"
+    log_debug "Keycloak helper methods loaded"
 }
 
 create_postgresql_password() {
@@ -275,7 +285,18 @@ check_for_authentication_instance() {
         done
         log_info "deleting volumes..."
         docker volume rm authentication_postgres_data
+        log_success "Volumes removed."
+        log_info "Checking for keycloak config file..."
+        if [[ -f "$keycloak_config_file" ]]; then
+            log_info "Keycloak config file found, removing outdated keycloak config file..."
+            rm "$keycloak_config_file"
+            log_success "Keycloak config file removed."
+        else 
+            log_info "no keycloak config file found."
+        fi
+
         log_success "Kaleido-authentication stopped and volumes removed."
+
     else
         log_info "no instance of kaleido-authentication found."
     fi
@@ -298,6 +319,18 @@ store_authentication_secrets() {
 
     echo "$authentication_db_password" > "$authentication_postgresql_secret_file"
     log_success "PostgreSQL password stored."
+
+    log_info "Storing keycloak admin access configuration..."
+
+    mkdir -p "$keycloak_output_dir"
+    keycloak_config=$(jq -n \
+        --arg admin_password "$authentication_admin_password" \
+        --arg admin_username "keycloak" \
+        --arg url "http://localhost:8080" \
+        '{url: $url, credentials: {username: $admin_username, password: $admin_password}}')
+    log_debug "keycloak_config=$keycloak_config"
+    echo "$keycloak_config" > "$keycloak_config_file"
+    log_success "Keycloak admin access configuration stored."
 }
 
 deploy_authentication_compose() {

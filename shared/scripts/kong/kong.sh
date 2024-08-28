@@ -3,11 +3,13 @@
 working_dir=$(pwd)
 
 # change working directory to directory of this script
-cd "$(dirname "${BASH_SOURCE[0]}")" || {
-    log_error "Failed to change the directory to $(dirname "$0")"
+script_dir=$(dirname "${BASH_SOURCE[0]}")
+cd "$script_dir" || {
+    log_error "Failed to change the directory to $script_dir"
     exit 1
 }
-source ../keycloak/shared.sh
+
+# source ../keycloak/keycloak.sh
 source ./kong-config.sh
 source ./kong-consumer.sh
 source ./kong-plugin.sh
